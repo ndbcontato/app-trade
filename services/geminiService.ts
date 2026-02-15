@@ -2,24 +2,22 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { MarketData, TradingSignal } from "../types";
 
-// Always use process.env.API_KEY directly when initializing the GoogleGenAI client instance.
-// The key's availability is handled externally and must not be requested from the user.
-
 export const fetchRealMarketData = async (): Promise<MarketData> => {
-  // Create a new GoogleGenAI instance right before making an API call to ensure current credentials
+  // Inicialização obrigatória dentro da função para garantir chave atualizada
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `
-    Acesse e pesquise em TEMPO REAL os seguintes indicadores financeiros usando as fontes oficiais:
-    1. VIX (Índice de Volatilidade): Consulte obrigatoriamente https://www.cnbc.com/quotes/.VIX
-    2. DXY (Índice do Dólar): Consulte tradingview.com
-    3. Mini Índice (WIN): Consulte tradingview.com (valor esperado em torno de 186.480,00)
-    4. Mini Dólar (WDO): Consulte tradingview.com (valor esperado em torno de 5.22)
-    5. DI (Juros Futuros Brasil): Pesquise o DI1F29 ou vencimento líquido mais próximo na B3/TradingView.
-    6. Contratos de Swap Cambial: Pesquise no site do Banco Central do Brasil ou notícias recentes de leilão de swap hoje.
+    Aja como um terminal Bloomberg de alta precisão. Pesquise em TEMPO REAL (agora: ${new Date().toISOString()}) e retorne os valores dos seguintes indicadores financeiros usando as fontes citadas:
 
-    Retorne os valores exatos encontrados em formato JSON: vix, dxy, di, dollar, index, swapContracts.
-    Se não encontrar o número exato de contratos, estime o volume financeiro do leilão anunciado.
+    1. VIX (CBOE Volatility Index): Verifique CNBC (.VIX) e Investing.com.
+    2. DXY (US Dollar Index): Verifique TradingView e Bloomberg.
+    3. Mini Índice (WIN - Vencimento Atual): Verifique B3 e TradingView. Valor esperado prox 186k.
+    4. Mini Dólar (WDO - Vencimento Atual): Verifique B3 e TradingView. Valor esperado prox 5.2x.
+    5. Taxa DI (DI1F29 ou contrato futuro mais líquido): Verifique Investing.com BR ou site oficial da B3.
+    6. Intervenções do Banco Central (BCB): Pesquise no site oficial bcb.gov.br e portais de notícias (Valor Econômico, G1 Economia) por anúncios de leilões de SWAP CAMBIAL realizados hoje ou agendados.
+
+    IMPORTANTE: Retorne os dados estritamente em JSON com as chaves: vix, dxy, di, dollar, index, swapContracts.
+    Se não encontrar o número exato de swaps, use 0 e descreva na análise.
   `;
 
   try {
@@ -44,14 +42,16 @@ export const fetchRealMarketData = async (): Promise<MarketData> => {
       }
     });
 
-    // Extract grounding chunks for website URLs as required for Google Search grounding
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map((chunk: any) => ({
       uri: chunk.web?.uri || "",
       title: chunk.web?.title || "Fonte de Mercado"
     })).filter((s: any) => s.uri !== "") || [];
 
-    // response.text is a getter, do not call it as a function
-    const data = JSON.parse(response.text || "{}");
+    // response.text é um GETTER, não uma função.
+    const textOutput = response.text;
+    if (!textOutput) throw new Error("Resposta da IA vazia");
+    
+    const data = JSON.parse(textOutput);
     
     return {
       ...data,
@@ -59,34 +59,27 @@ export const fetchRealMarketData = async (): Promise<MarketData> => {
       sources: sources
     };
   } catch (error) {
-    console.error("Erro ao buscar dados reais:", error);
+    console.error("Erro na comunicação Gemini:", error);
     throw error;
   }
 };
 
 export const analyzeMarket = async (data: MarketData): Promise<TradingSignal[]> => {
-  // Create a new GoogleGenAI instance right before making an API call
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `
-    Analise os seguintes dados do mercado brasileiro e global:
-    - VIX: ${data.vix} (Medo Global)
-    - DXY: ${data.dxy} (Força do Dólar)
-    - DI: ${data.di}% (Custo do Dinheiro/Risco Brasil)
-    - WIN: ${data.index} pts (Mini Índice)
-    - WDO: R$ ${data.dollar} (Mini Dólar)
-    - Swap Cambial: ${data.swapContracts} contratos (Intervenção BCB)
+    Analise o alinhamento macro para o mercado brasileiro:
+    DADOS: VIX: ${data.vix} | DXY: ${data.dxy} | DI: ${data.di}% | WIN: ${data.index} | WDO: ${data.dollar} | SWAPS BCB: ${data.swapContracts}.
 
-    REGRAS DE SINALIZAÇÃO:
-    1. COMPRA ÍNDICE: Se VIX está caindo, DXY está caindo e DI está estável ou em queda, há ALINHAMENTO para COMPRA de índice.
-    2. OPERAÇÃO DÓLAR (HEDGE BCB): Avalie os contratos de swap. Se o dólar está subindo e o BC anunciou swap cambial, ele está fazendo hedge (vendendo dólar para prover liquidez). Sinalize VENDA de dólar se o BC entrar pesado. Se o dólar sobe e não há swap, pode ser sinal de COMPRA de dólar até o BC agir.
-
-    Retorne dois sinais (INDICE e DOLAR) em JSON, justificando com base no alinhamento desses indicadores.
+    REGRAS DE OURO:
+    - ALINHAMENTO COMPRA ÍNDICE: VIX e DXY em queda simultânea (apetite ao risco global) + DI estável/queda.
+    - HEDGE DOLAR: Se o dólar está em patamar de estresse e o BCB injetou swaps (${data.swapContracts}), há uma força de venda institucional (Hedge do BC).
+    
+    Gere recomendações claras de COMPRA, VENDA ou NEUTRO para o INDICE e para o DOLAR.
   `;
 
   const response = await ai.models.generateContent({
-    // Using gemini-3-pro-preview for complex reasoning task (financial analysis)
-    model: "gemini-3-pro-preview",
+    model: "gemini-3-pro-preview", // Modelo superior para análise lógica
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -102,44 +95,30 @@ export const analyzeMarket = async (data: MarketData): Promise<TradingSignal[]> 
             timestamp: { type: Type.STRING }
           },
           required: ["asset", "action", "reasoning", "confidence", "timestamp"]
-        },
-        tools: [{ googleSearch: {} }]
+        }
       }
     }
   });
 
-  // response.text is a getter
   return JSON.parse(response.text || "[]");
 };
 
-/**
- * Evaluates the likelihood of intervention by the Central Bank of Brazil.
- * Fix: Added this missing export which was causing the import error in App.tsx.
- */
 export const checkIntervention = async (data: MarketData): Promise<string> => {
-  // Create a new GoogleGenAI instance right before making an API call
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `
-    Analise a situação de intervenção cambial do Banco Central do Brasil:
-    - Valor do Dólar (WDO): R$ ${data.dollar}
-    - Contratos de Swap detectados: ${data.swapContracts}
-    
-    O BCB costuma intervir quando o dólar sobe rápido demais ou atinge patamares de estresse.
-    Com base nesses dados, descreva se há sinais de intervenção ativa ou se o mercado está em calmaria.
-    Seja breve e direto.
+    Pesquise especificamente no site do Banco Central do Brasil (bcb.gov.br) e Valor Econômico se houve atuação hoje no câmbio com o dólar cotado a R$ ${data.dollar}. 
+    Explique o impacto técnico dos ${data.swapContracts} contratos detectados no fluxo de liquidez.
   `;
 
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
+      config: { tools: [{ googleSearch: {} }] }
     });
-
-    // response.text is a getter
-    return response.text || "Monitorando níveis de intervenção...";
-  } catch (error) {
-    console.error("Erro ao analisar intervenção:", error);
-    return "Não foi possível completar a análise de intervenção no momento.";
+    return response.text || "Sem intervenções registradas nas fontes oficiais.";
+  } catch (err) {
+    return "Erro ao consultar fontes do Banco Central.";
   }
 };
