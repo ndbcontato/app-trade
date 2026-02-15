@@ -1,0 +1,5 @@
+{
+  "name": "Copy of TradeGuard AI - B3 Financial Monitor",
+  "description": "An intelligent financial dashboard that monitors VIX, DXY, DI, and BCB Swap contracts to provide real-time buy/sell signals for the Brazilian Index and Dollar.",
+  "requestFramePermissions": []
+}

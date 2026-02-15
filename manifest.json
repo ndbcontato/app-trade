@@ -1,0 +1,22 @@
+
+{
+  "short_name": "TradeGuard",
+  "name": "TradeGuard AI - B3 Monitor",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2533/2533552.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2533/2533552.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0a0a0c",
+  "background_color": "#0a0a0c",
+  "orientation": "portrait"
+}
